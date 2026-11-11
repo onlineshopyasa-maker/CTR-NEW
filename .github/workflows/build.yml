@@ -1,0 +1,47 @@
+name: Build APK from ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '*.zip'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract the project zip
+        run: |
+          ZIP=$(ls -1 *.zip | head -n 1)
+          [ -n "$ZIP" ] || { echo "No .zip found in the repo root"; exit 1; }
+          echo "Extracting $ZIP"
+          mkdir -p src
+          unzip -q "$ZIP" -d src
+          GRADLEW=$(find src -type f -name gradlew -path '*/android/*' | head -n 1)
+          [ -n "$GRADLEW" ] || { echo "android/gradlew not found inside the zip"; exit 1; }
+          ANDROID_DIR=$(dirname "$GRADLEW")
+          chmod +x "$GRADLEW"
+          echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Android project: $ANDROID_DIR"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install CMake and NDK
+        run: sdkmanager "cmake;3.22.1" "ndk;26.3.11579264"
+
+      - name: Build debug APK
+        working-directory: ${{ env.ANDROID_DIR }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctr-native-debug-apk
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/*.apk
